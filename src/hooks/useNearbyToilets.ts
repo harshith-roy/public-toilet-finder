@@ -4,7 +4,7 @@ import type { Toilet } from '../types'
 import type { Coordinates } from './useGeolocation'
 
 export const RADIUS_OPTIONS = [1, 2, 5, 10] as const
-export type RadiusOption = typeof RADIUS_OPTIONS[number]
+export type RadiusOption = (typeof RADIUS_OPTIONS)[number]
 
 export const useNearbyToilets = (coords: Coordinates | null) => {
   const [toilets, setToilets] = useState<Toilet[]>([])
@@ -16,6 +16,25 @@ export const useNearbyToilets = (coords: Coordinates | null) => {
 
   const executeFetch = useCallback(
     async (targetCoords: Coordinates, radius: RadiusOption) => {
+      // Strict coordinate verification before invoking RPC:
+      // Must be finite numbers and cannot be (0, 0) / null converted to zero
+      if (
+        !targetCoords ||
+        typeof targetCoords.latitude !== 'number' ||
+        typeof targetCoords.longitude !== 'number' ||
+        !Number.isFinite(targetCoords.latitude) ||
+        !Number.isFinite(targetCoords.longitude) ||
+        (Math.abs(targetCoords.latitude) < 0.0001 && Math.abs(targetCoords.longitude) < 0.0001) ||
+        targetCoords.latitude < -90 ||
+        targetCoords.latitude > 90 ||
+        targetCoords.longitude < -180 ||
+        targetCoords.longitude > 180
+      ) {
+        setToilets([])
+        setLoading(false)
+        return
+      }
+
       const requestId = ++activeRequestId.current
       setLoading(true)
       setError(null)
@@ -68,15 +87,28 @@ export const useNearbyToilets = (coords: Coordinates | null) => {
     []
   )
 
+  const lat = coords?.latitude
+  const lng = coords?.longitude
+
   useEffect(() => {
-    if (coords) {
-      // Async trigger to decouple from effect body
-      const timer = setTimeout(() => {
+    const isCoordsValid =
+      coords &&
+      typeof lat === 'number' &&
+      typeof lng === 'number' &&
+      Number.isFinite(lat) &&
+      Number.isFinite(lng) &&
+      !(Math.abs(lat) < 0.0001 && Math.abs(lng) < 0.0001)
+
+    const timer = setTimeout(() => {
+      if (isCoordsValid) {
         executeFetch(coords, radiusKm)
-      }, 0)
-      return () => clearTimeout(timer)
-    }
-  }, [coords, radiusKm, executeFetch])
+      } else {
+        setToilets([])
+        setLoading(false)
+      }
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [coords, lat, lng, radiusKm, executeFetch])
 
   const refetch = useCallback(() => {
     if (coords) {

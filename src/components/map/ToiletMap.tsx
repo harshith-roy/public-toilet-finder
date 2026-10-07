@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useRef } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, Circle, useMap } from 'react-leaflet'
 import type { Toilet } from '../../types'
 import type { Coordinates } from '../../hooks/useGeolocation'
@@ -14,41 +14,123 @@ interface ToiletMapProps {
   toilets: Toilet[]
   selectedToilet: Toilet | null
   radiusKm: number
+  recenterTrigger?: number
   onSelectToilet: (toilet: Toilet) => void
   onNavigateToilet: (toilet: Toilet) => void
   onRecenterUser: () => void
 }
 
-// Controller component to smoothly fly/pan map when coordinates or selection change
+// Neutral India center before GPS coordinates arrive
+const INDIA_CENTER: [number, number] = [20.5937, 78.9629]
+const INDIA_ZOOM = 5
+
+const isCoordsValid = (coords: Coordinates | null): coords is Coordinates => {
+  return (
+    !!coords &&
+    typeof coords.latitude === 'number' &&
+    typeof coords.longitude === 'number' &&
+    Number.isFinite(coords.latitude) &&
+    Number.isFinite(coords.longitude) &&
+    !(Math.abs(coords.latitude) < 0.0001 && Math.abs(coords.longitude) < 0.0001)
+  )
+}
+
+// Controller component to manage intentional map viewport transitions without fighting user interaction
 const MapViewController: React.FC<{
   userCoords: Coordinates | null
   selectedToilet: Toilet | null
-}> = ({ userCoords, selectedToilet }) => {
+  recenterTrigger?: number
+}> = ({ userCoords, selectedToilet, recenterTrigger }) => {
   const map = useMap()
+  const hasCenteredInitial = useRef(false)
+  const prevRecenterTrigger = useRef(recenterTrigger)
+  const prevSelectedId = useRef<string | null>(null)
 
+  // 1. Invalidate size once after mounting to ensure correct container boundaries
   useEffect(() => {
-    // Invalidate size in case parent container sized asynchronously
     const timer = setTimeout(() => {
       map.invalidateSize()
-    }, 200)
+    }, 150)
     return () => clearTimeout(timer)
   }, [map])
 
+  // 2. Viewport synchronization:
+  // - If userCoords is valid and hasn't centered yet, center ONCE to user location
+  // - If userCoords is null (no GPS / timed out / denied), enforce the neutral India viewport
   useEffect(() => {
-    if (selectedToilet) {
-      map.flyTo([selectedToilet.latitude, selectedToilet.longitude], 16, {
+    if (isCoordsValid(userCoords) && !hasCenteredInitial.current) {
+      hasCenteredInitial.current = true
+      map.setView([userCoords.latitude, userCoords.longitude], 14, {
         animate: true,
-        duration: 0.8,
       })
-    } else if (userCoords) {
-      map.flyTo([userCoords.latitude, userCoords.longitude], 14, {
-        animate: true,
-        duration: 0.8,
+    } else if (!isCoordsValid(userCoords)) {
+      hasCenteredInitial.current = false
+      map.setView(INDIA_CENTER, INDIA_ZOOM, {
+        animate: false,
       })
     }
-  }, [map, userCoords, selectedToilet])
+  }, [map, userCoords])
+
+  // 3. Explicit recenter request triggered by user ("Center My Location" or "Refresh Location")
+  useEffect(() => {
+    if (recenterTrigger !== undefined && recenterTrigger !== prevRecenterTrigger.current) {
+      prevRecenterTrigger.current = recenterTrigger
+      if (isCoordsValid(userCoords)) {
+        map.setView([userCoords.latitude, userCoords.longitude], 14, {
+          animate: true,
+        })
+      } else {
+        map.setView(INDIA_CENTER, INDIA_ZOOM, {
+          animate: true,
+        })
+      }
+    }
+  }, [map, userCoords, recenterTrigger])
+
+  // 4. Pan to selected toilet when chosen; crucially, DO NOT fly back to userCoords when deselected
+  useEffect(() => {
+    if (selectedToilet && selectedToilet.id !== prevSelectedId.current) {
+      prevSelectedId.current = selectedToilet.id
+      map.panTo([selectedToilet.latitude, selectedToilet.longitude], {
+        animate: true,
+      })
+    } else if (!selectedToilet) {
+      prevSelectedId.current = null
+      // Retain current viewport; do NOT fight user pan/zoom
+    }
+  }, [map, selectedToilet])
 
   return null
+}
+
+// Floating recenter button within map context
+const RecenterButton: React.FC<{
+  userCoords: Coordinates | null
+  onRecenterUser: () => void
+}> = ({ userCoords, onRecenterUser }) => {
+  const map = useMap()
+
+  if (!isCoordsValid(userCoords)) return null
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    map.setView([userCoords.latitude, userCoords.longitude], 14, {
+      animate: true,
+    })
+    onRecenterUser()
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      className="absolute bottom-4 right-4 z-[400] bg-white hover:bg-slate-50 text-slate-700 font-medium text-xs px-3 py-2 rounded-xl shadow-md border border-slate-200 flex items-center gap-2 transition-transform active:scale-95 cursor-pointer"
+      title="Center map on your location"
+    >
+      <span className="w-2.5 h-2.5 rounded-full bg-sky-500 animate-pulse"></span>
+      <span>Center My Location</span>
+    </button>
+  )
 }
 
 export const ToiletMap: React.FC<ToiletMapProps> = ({
@@ -56,49 +138,56 @@ export const ToiletMap: React.FC<ToiletMapProps> = ({
   toilets,
   selectedToilet,
   radiusKm,
+  recenterTrigger,
   onSelectToilet,
   onNavigateToilet,
   onRecenterUser,
 }) => {
-  // Neutral fallback map center before GPS coordinates arrive
-  const defaultCenter: [number, number] = userCoords
-    ? [userCoords.latitude, userCoords.longitude]
-    : [20.5937, 78.9629]
+  const validUser = isCoordsValid(userCoords) ? userCoords : null
 
   return (
     <div className="relative w-full h-full min-h-[350px] bg-slate-100 overflow-hidden">
       <MapContainer
-        center={defaultCenter}
-        zoom={userCoords ? 14 : 5}
+        center={INDIA_CENTER}
+        zoom={INDIA_ZOOM}
         scrollWheelZoom={true}
         className="w-full h-full z-10"
       >
-        <MapViewController userCoords={userCoords} selectedToilet={selectedToilet} />
+        <MapViewController
+          userCoords={userCoords}
+          selectedToilet={selectedToilet}
+          recenterTrigger={recenterTrigger}
+        />
 
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {/* User Current Location Marker & Radius Circle */}
-        {userCoords && (
+        {/* User Current Location Marker & Radius Circle — ONLY rendered when real GPS userCoords exists */}
+        {validUser && (
           <>
             <Marker
-              position={[userCoords.latitude, userCoords.longitude]}
+              position={[validUser.latitude, validUser.longitude]}
               icon={userLocationIcon}
             >
-              <Popup>
+              <Popup autoPan={false}>
                 <div className="p-1 text-xs">
                   <p className="font-bold text-slate-800">Your Current Location</p>
                   <p className="text-slate-500 font-mono text-[10px]">
-                    {userCoords.latitude.toFixed(5)}, {userCoords.longitude.toFixed(5)}
+                    {validUser.latitude.toFixed(5)}, {validUser.longitude.toFixed(5)}
                   </p>
+                  {validUser.accuracy > 0 && (
+                    <p className="text-slate-400 text-[10px]">
+                      Accuracy: ±{Math.round(validUser.accuracy)} meters
+                    </p>
+                  )}
                 </div>
               </Popup>
             </Marker>
 
             <Circle
-              center={[userCoords.latitude, userCoords.longitude]}
+              center={[validUser.latitude, validUser.longitude]}
               radius={radiusKm * 1000}
               pathOptions={{
                 color: '#059669',
@@ -111,7 +200,7 @@ export const ToiletMap: React.FC<ToiletMapProps> = ({
           </>
         )}
 
-        {/* Toilet Markers */}
+        {/* Toilet Markers — Strictly rendered from toilets query; stable key, memoized DivIcon */}
         {toilets.map((toilet) => {
           const isSelected = selectedToilet?.id === toilet.id
           const cleanBadge = getCleanlinessBadge(toilet.cleanliness_status)
@@ -123,10 +212,12 @@ export const ToiletMap: React.FC<ToiletMapProps> = ({
               position={[toilet.latitude, toilet.longitude]}
               icon={getToiletIcon(toilet.cleanliness_status, isSelected)}
               eventHandlers={{
-                click: () => onSelectToilet(toilet),
+                click: () => {
+                  onSelectToilet(toilet)
+                },
               }}
             >
-              <Popup>
+              <Popup autoPan={false}>
                 <div className="p-1 max-w-[220px] text-xs space-y-1.5">
                   <div className="font-bold text-slate-900 leading-tight text-sm">
                     {toilet.name}
@@ -149,19 +240,18 @@ export const ToiletMap: React.FC<ToiletMapProps> = ({
                       </span>
                     )}
                   </div>
-
                   <div className="pt-2 flex gap-1.5">
                     <button
                       type="button"
                       onClick={() => onSelectToilet(toilet)}
-                      className="flex-1 py-1 px-2 text-[11px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition-colors"
+                      className="flex-1 py-1 px-2 text-[11px] font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded transition-colors cursor-pointer"
                     >
-                      Details
+                      View Details
                     </button>
                     <button
                       type="button"
                       onClick={() => onNavigateToilet(toilet)}
-                      className="flex-1 py-1 px-2 text-[11px] font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded transition-colors"
+                      className="flex-1 py-1 px-2 text-[11px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition-colors cursor-pointer"
                     >
                       Navigate
                     </button>
@@ -171,23 +261,12 @@ export const ToiletMap: React.FC<ToiletMapProps> = ({
             </Marker>
           )
         })}
+
+        <RecenterButton userCoords={userCoords} onRecenterUser={onRecenterUser} />
       </MapContainer>
 
-      {/* Floating Recenter Map Button */}
-      {userCoords && (
-        <button
-          type="button"
-          onClick={onRecenterUser}
-          className="absolute bottom-4 right-4 z-20 bg-white hover:bg-slate-50 text-slate-700 font-medium text-xs px-3 py-2 rounded-xl shadow-md border border-slate-200 flex items-center gap-2 transition-transform active:scale-95 cursor-pointer"
-          title="Center map on your location"
-        >
-          <span className="w-2.5 h-2.5 rounded-full bg-sky-500 animate-pulse"></span>
-          <span>Center My Location</span>
-        </button>
-      )}
-
       {/* Map Legend */}
-      <div className="absolute top-3 left-14 z-20 bg-white/90 backdrop-blur-xs px-2.5 py-1.5 rounded-lg border border-slate-200 shadow-xs hidden sm:flex items-center gap-3 text-[11px] text-slate-600">
+      <div className="absolute top-3 left-14 z-[400] bg-white/90 backdrop-blur-xs px-2.5 py-1.5 rounded-lg border border-slate-200 shadow-xs hidden sm:flex items-center gap-3 text-[11px] text-slate-600">
         <div className="flex items-center gap-1">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-600"></span>
           <span>Clean</span>

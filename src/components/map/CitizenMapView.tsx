@@ -20,6 +20,7 @@ export const CitizenMapView: React.FC<CitizenMapViewProps> = ({ onSwitchToAuthor
   const {
     coords: userCoords,
     loading: locatingUser,
+    status: locationStatus,
     error: locationError,
     refreshLocation,
   } = useGeolocation()
@@ -30,7 +31,6 @@ export const CitizenMapView: React.FC<CitizenMapViewProps> = ({ onSwitchToAuthor
     error: toiletError,
     radiusKm,
     setRadiusKm,
-    refetchToilets,
   } = useNearbyToilets(userCoords)
 
   const {
@@ -54,7 +54,7 @@ export const CitizenMapView: React.FC<CitizenMapViewProps> = ({ onSwitchToAuthor
   const [reportingToilet, setReportingToilet] = useState<Toilet | null>(null)
   const [myComplaintsOpen, setMyComplaintsOpen] = useState(false)
   const [aiAssistantOpen, setAiAssistantOpen] = useState(false)
-
+  const [recenterCount, setRecenterCount] = useState(0)
 
   // Handle toilet selection from map marker or card list
   const handleSelectToilet = useCallback((toilet: Toilet) => {
@@ -76,20 +76,23 @@ export const CitizenMapView: React.FC<CitizenMapViewProps> = ({ onSwitchToAuthor
   // Handle Refresh Location / Use My Location
   const handleRefreshLocation = useCallback(() => {
     refreshLocation()
+    setRecenterCount((c) => c + 1)
   }, [refreshLocation])
 
   // Recenter map on user location
   const handleRecenterUser = useCallback(() => {
-    setSelectedToilet(null)
-    if (userCoords) {
-      refetchToilets()
-    }
-  }, [userCoords, refetchToilets])
+    setRecenterCount((c) => c + 1)
+  }, [])
 
   // Handle opening problem reporting modal
   const handleOpenReportProblem = useCallback((toilet: Toilet) => {
     setDetailModalOpen(false)
     setReportingToilet(toilet)
+  }, [])
+
+  const handleCloseDetailModal = useCallback(() => {
+    setDetailModalOpen(false)
+    setSelectedToilet(null)
   }, [])
 
   return (
@@ -124,6 +127,7 @@ export const CitizenMapView: React.FC<CitizenMapViewProps> = ({ onSwitchToAuthor
             toilets={toilets}
             selectedToilet={selectedToilet}
             radiusKm={radiusKm}
+            recenterTrigger={recenterCount}
             onSelectToilet={handleSelectToilet}
             onNavigateToilet={handleNavigateToilet}
             onRecenterUser={handleRecenterUser}
@@ -136,6 +140,7 @@ export const CitizenMapView: React.FC<CitizenMapViewProps> = ({ onSwitchToAuthor
             toilets={toilets}
             loadingToilets={loadingToilets}
             locatingUser={locatingUser}
+            locationStatus={locationStatus}
             toiletError={toiletError}
             locationError={locationError}
             userCoords={userCoords}
@@ -153,7 +158,7 @@ export const CitizenMapView: React.FC<CitizenMapViewProps> = ({ onSwitchToAuthor
       {detailModalOpen && (
         <ToiletDetailModal
           toilet={selectedToilet}
-          onClose={() => setDetailModalOpen(false)}
+          onClose={handleCloseDetailModal}
           onReportProblem={handleOpenReportProblem}
         />
       )}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { AuthView } from './components/auth/AuthView'
 import { CitizenMapView } from './components/map/CitizenMapView'
@@ -6,55 +6,49 @@ import { AuthorityDashboard } from './components/authority/AuthorityDashboard'
 import { AccessDenied } from './components/authority/AccessDenied'
 
 const MainContent = () => {
-  const { user, profile, loading } = useAuth()
-  const [viewMode, setViewMode] = useState<'citizen' | 'authority'>('citizen')
+  const { user, profile, loading, authState } = useAuth()
+  const isAuthority = profile?.role === 'authority'
+  const [userSelectedView, setUserSelectedView] = useState<'citizen' | 'authority' | null>(null)
 
-  // Default authority users to authority view; ensure citizens default to citizen view
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (profile?.role === 'authority') {
-        setViewMode('authority')
-      } else {
-        setViewMode('citizen')
-      }
-    }, 0)
-    return () => clearTimeout(timer)
-  }, [profile?.role])
+  // Clean derived viewMode: defaults to user's verified role without setState effects
+  const activeView = userSelectedView ?? (isAuthority ? 'authority' : 'citizen')
 
-  if (loading) {
+  // While auth session is initializing or profile is loading, show clean session screen
+  if (loading || authState === 'INITIALIZING' || authState === 'PROFILE_LOADING') {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <div className="flex items-center space-x-3 text-emerald-600 font-medium text-sm">
-          <svg className="animate-spin h-5 w-5 text-emerald-600" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" strokeWidth="4" fill="none" />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            />
-          </svg>
-          <span>Loading authentication session...</span>
+        <div className="flex flex-col items-center space-y-3">
+          <div className="w-10 h-10 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
+          <div className="text-center">
+            <p className="text-slate-800 font-semibold text-sm">
+              {authState === 'PROFILE_LOADING'
+                ? 'Loading user profile...'
+                : 'Checking your session...'}
+            </p>
+            <p className="text-slate-400 text-xs mt-0.5">Please wait a moment</p>
+          </div>
         </div>
       </div>
     )
   }
 
+  // If unauthenticated, render AuthView
   if (!user) {
     return <AuthView />
   }
 
   // Guard authority view strictly by user's actual profile role
-  if (viewMode === 'authority') {
-    if (profile?.role !== 'authority') {
-      return <AccessDenied onBackToCitizen={() => setViewMode('citizen')} />
+  if (activeView === 'authority') {
+    if (!isAuthority) {
+      return <AccessDenied onBackToCitizen={() => setUserSelectedView('citizen')} />
     }
-    return <AuthorityDashboard onSwitchToCitizenView={() => setViewMode('citizen')} />
+    return <AuthorityDashboard onSwitchToCitizenView={() => setUserSelectedView('citizen')} />
   }
 
   return (
     <CitizenMapView
       onSwitchToAuthority={
-        profile?.role === 'authority' ? () => setViewMode('authority') : undefined
+        isAuthority ? () => setUserSelectedView('authority') : undefined
       }
     />
   )

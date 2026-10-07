@@ -1,13 +1,14 @@
 import React, { useState, useMemo } from 'react'
 import type { Toilet } from '../../types'
 import { RADIUS_OPTIONS, type RadiusOption } from '../../hooks/useNearbyToilets'
-import type { Coordinates } from '../../hooks/useGeolocation'
+import type { Coordinates, GeolocationStatus } from '../../hooks/useGeolocation'
 import { ToiletCard } from './ToiletCard'
 
 interface ToiletListProps {
   toilets: Toilet[]
   loadingToilets: boolean
   locatingUser: boolean
+  locationStatus?: GeolocationStatus
   toiletError: string | null
   locationError: { message: string; isDenied: boolean } | null
   userCoords: Coordinates | null
@@ -23,6 +24,7 @@ export const ToiletList: React.FC<ToiletListProps> = ({
   toilets,
   loadingToilets,
   locatingUser,
+  locationStatus,
   toiletError,
   locationError,
   userCoords,
@@ -132,17 +134,20 @@ export const ToiletList: React.FC<ToiletListProps> = ({
         {/* Status Indicator Bar */}
         <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100">
           <div className="flex items-center gap-1.5 truncate">
-            {userCoords ? (
+            {userCoords && !(Math.abs(userCoords.latitude) < 0.0001 && Math.abs(userCoords.longitude) < 0.0001) ? (
               <>
                 <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
                 <span className="font-mono text-[10px] text-slate-600 truncate">
                   GPS: {userCoords.latitude.toFixed(4)}, {userCoords.longitude.toFixed(4)}
+                  {userCoords.accuracy > 0 ? ` (±${Math.round(userCoords.accuracy)}m)` : ''}
                 </span>
               </>
             ) : locatingUser ? (
               <>
                 <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping shrink-0"></span>
-                <span>Detecting GPS location...</span>
+                <span>
+                  {locationStatus === 'prompt' ? 'Waiting for GPS permission...' : 'Detecting GPS location...'}
+                </span>
               </>
             ) : (
               <>
