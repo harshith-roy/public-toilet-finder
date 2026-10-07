@@ -5,12 +5,14 @@ interface HeaderProps {
   onOpenMyComplaints?: () => void
   complaintCount?: number
   onSwitchToAuthority?: () => void
+  onOpenAIAssistant?: () => void
 }
 
 export const Header: React.FC<HeaderProps> = ({
   onOpenMyComplaints,
   complaintCount,
   onSwitchToAuthority,
+  onOpenAIAssistant,
 }) => {
   const { user, profile, signOut } = useAuth()
 
@@ -38,6 +40,22 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       <div className="flex items-center space-x-2.5">
+        {!isAuthority && onOpenAIAssistant && (
+          <button
+            type="button"
+            onClick={onOpenAIAssistant}
+            className="text-xs px-3 py-1.5 font-bold text-slate-900 bg-gradient-to-r from-emerald-100 via-teal-100 to-sky-100 hover:from-emerald-200 hover:to-teal-200 border border-emerald-300 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer shadow-xs hover:shadow-sm"
+            title="Ask AI Smart Toilet Assistant"
+          >
+            <span className="text-sm">🤖</span>
+            <span className="hidden sm:inline">AI Assistant</span>
+            <span className="sm:hidden">AI</span>
+            <span className="text-[9px] bg-emerald-700 text-white font-extrabold px-1.5 py-0.2 rounded uppercase tracking-wider">
+              Smart
+            </span>
+          </button>
+        )}
+
         {!isAuthority && onOpenMyComplaints && (
           <button
             type="button"

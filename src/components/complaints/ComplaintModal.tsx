@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
-import type { Toilet, ComplaintCategory } from '../../types'
+import type { Toilet, ComplaintCategory, AIAssistReportResponse } from '../../types'
 import { getComplaintCategoryLabel } from '../../utils/toiletFormatters'
+import { useAIAssistant } from '../../hooks/useAIAssistant'
 
 interface ComplaintModalProps {
   toilet: Toilet | null
@@ -24,13 +25,17 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
   onClose,
   onSubmit,
 }) => {
+  const { assistReport } = useAIAssistant()
   const [category, setCategory] = useState<ComplaintCategory>('cleanliness')
   const [description, setDescription] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [isSuccess, setIsSuccess] = useState(false)
+  const [aiAssisting, setAiAssisting] = useState(false)
+  const [aiSuggestion, setAiSuggestion] = useState<AIAssistReportResponse | null>(null)
 
   if (!isOpen || !toilet) return null
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -68,6 +73,30 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
     setErrorMsg(null)
     setIsSuccess(false)
     onClose()
+  }
+
+  const handleAIHelp = async () => {
+    if (!description.trim() || description.trim().length < 5) {
+      setErrorMsg('Please enter a brief phrase (e.g. broken tap, door damaged) so AI can suggest category and improvements.')
+      return
+    }
+    setAiAssisting(true)
+    setErrorMsg(null)
+    try {
+      const res = await assistReport(toilet.name, description.trim())
+      if (res) {
+        setAiSuggestion(res)
+      }
+    } finally {
+      setAiAssisting(false)
+    }
+  }
+
+  const applyAISuggestion = () => {
+    if (!aiSuggestion) return
+    setCategory(aiSuggestion.suggestedCategory)
+    setDescription(aiSuggestion.suggestedDescription)
+    setAiSuggestion(null)
   }
 
   return (
@@ -179,11 +208,75 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
             </div>
           </div>
 
+          {/* AI Suggestion Card */}
+          {aiSuggestion && (
+            <div className="p-3 bg-purple-50/80 border border-purple-200 rounded-xl space-y-2 animate-fade-in text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-purple-900 flex items-center gap-1">
+                  <span>✨</span> AI Suggestion
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-200 text-purple-800">
+                  Priority: {aiSuggestion.suggestedPriority}
+                </span>
+              </div>
+              <div className="text-slate-700 text-[11px]">
+                <span className="font-semibold text-purple-800">Suggested Category: </span>
+                {getComplaintCategoryLabel(aiSuggestion.suggestedCategory)}
+              </div>
+              <div className="text-slate-800 bg-white p-2.5 rounded-lg border border-purple-100 text-xs font-medium">
+                "{aiSuggestion.suggestedDescription}"
+              </div>
+              <div className="text-[10px] text-slate-500 italic">
+                Reason: {aiSuggestion.reasoning}
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-1 border-t border-purple-100">
+                <button
+                  type="button"
+                  onClick={() => setAiSuggestion(null)}
+                  className="px-2.5 py-1 text-slate-500 hover:text-slate-700 cursor-pointer text-[11px]"
+                >
+                  Dismiss
+                </button>
+                <button
+                  type="button"
+                  onClick={applyAISuggestion}
+                  className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg cursor-pointer text-[11px] transition-colors"
+                >
+                  Apply to Form
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Description */}
           <div>
-            <label htmlFor="complaint-description" className="block text-xs font-semibold text-slate-700 mb-1">
-              Problem Description <span className="text-rose-500">*</span>
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label htmlFor="complaint-description" className="block text-xs font-semibold text-slate-700">
+                Problem Description <span className="text-rose-500">*</span>
+              </label>
+              <button
+                type="button"
+                onClick={handleAIHelp}
+                disabled={aiAssisting || submitting}
+                className="text-[11px] px-2.5 py-1 bg-gradient-to-r from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 border border-purple-200 text-purple-700 font-bold rounded-lg transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                title="Use AI to categorize and refine this complaint"
+              >
+                {aiAssisting ? (
+                  <>
+                    <svg className="animate-spin h-3 w-3 text-purple-700" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    <span>AI Analyzing...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>✨</span>
+                    <span>AI Help</span>
+                  </>
+                )}
+              </button>
+            </div>
             <textarea
               id="complaint-description"
               name="description"
@@ -200,6 +293,7 @@ export const ComplaintModal: React.FC<ComplaintModalProps> = ({
               <span>{description.trim().length} chars</span>
             </div>
           </div>
+
 
           {/* Footer Actions */}
           <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">

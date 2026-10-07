@@ -1,6 +1,13 @@
-import React, { useMemo } from 'react'
-import type { ComplaintWithToilet, AuthorityToiletSummary, FacilityReportStats, ComplaintCategory } from '../../types'
+import React, { useMemo, useState, useEffect, useCallback } from 'react'
+import type {
+  ComplaintWithToilet,
+  AuthorityToiletSummary,
+  FacilityReportStats,
+  ComplaintCategory,
+  AIAuthorityInsightResponse,
+} from '../../types'
 import { getComplaintCategoryLabel } from '../../utils/toiletFormatters'
+import { useAIAssistant } from '../../hooks/useAIAssistant'
 
 interface OperationsAnalyticsProps {
   toilets: AuthorityToiletSummary[]
@@ -29,6 +36,27 @@ export const OperationsAnalytics: React.FC<OperationsAnalyticsProps> = ({
   toilets,
   complaints,
 }) => {
+  const { getAuthorityInsights } = useAIAssistant()
+  const [aiInsight, setAiInsight] = useState<AIAuthorityInsightResponse | null>(null)
+  const [aiLoading, setAiLoading] = useState(false)
+
+  const loadAIInsight = useCallback(async () => {
+    setAiLoading(true)
+    try {
+      const res = await getAuthorityInsights(toilets, complaints)
+      setAiInsight(res)
+    } finally {
+      setAiLoading(false)
+    }
+  }, [getAuthorityInsights, toilets, complaints])
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadAIInsight()
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [loadAIInsight])
+
   // Category Breakdown
   const categoryStats = useMemo(() => {
     const total = complaints.length
@@ -38,6 +66,7 @@ export const OperationsAnalytics: React.FC<OperationsAnalyticsProps> = ({
       return {
         category: cat,
         label: getComplaintCategoryLabel(cat),
+
         count,
         percentage,
         colors: CATEGORY_COLORS[cat],
@@ -310,39 +339,94 @@ export const OperationsAnalytics: React.FC<OperationsAnalyticsProps> = ({
         )}
       </div>
 
-      {/* 3. Operational Insights & Resolution Time */}
+      {/* 3. AI Operations Insights & Resolution Time */}
       <div className="bg-white rounded-xl border border-slate-200/80 p-5 shadow-xs flex flex-col justify-between">
         <div>
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wider">
-                Operational Insights
-              </h3>
-              <p className="text-xs text-slate-500">Live intelligence derived from database</p>
+              <div className="flex items-center gap-1.5">
+                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+                  AI Operations Insight
+                </h3>
+                <span className="text-[10px] bg-purple-100 text-purple-700 font-extrabold px-1.5 py-0.2 rounded uppercase">
+                  S5 AI
+                </span>
+              </div>
+              <p className="text-xs text-slate-500">Live intelligence from complaints & facilities</p>
             </div>
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Live sync" />
+            <button
+              type="button"
+              onClick={loadAIInsight}
+              disabled={aiLoading}
+              className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+              title="Refresh AI Analysis"
+            >
+              <svg className={`w-3.5 h-3.5 ${aiLoading ? 'animate-spin text-purple-600' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
           </div>
 
+          {/* AI Insight Card */}
           <div className="space-y-2.5">
-            {operationalInsights.map((insight, idx) => (
+            {aiLoading ? (
+              <div className="p-3 bg-purple-50/50 border border-purple-100 rounded-lg text-xs text-purple-700 flex items-center gap-2">
+                <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                <span>Analyzing civic records with AI...</span>
+              </div>
+            ) : aiInsight ? (
+              <div className="space-y-2">
+                <div className={`p-3 rounded-lg border text-xs ${
+                  !aiInsight.hasData
+                    ? 'bg-slate-50 border-slate-200 text-slate-700'
+                    : aiInsight.urgency === 'critical'
+                    ? 'bg-rose-50 border-rose-200 text-rose-900'
+                    : aiInsight.urgency === 'elevated'
+                    ? 'bg-amber-50 border-amber-200 text-amber-900'
+                    : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                }`}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="font-bold flex items-center gap-1">
+                      <span>🤖</span> {!aiInsight.hasData ? 'Zero Active Complaints' : 'Operational Assessment'}
+                    </span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
+                      !aiInsight.hasData
+                        ? 'bg-slate-200 text-slate-700'
+                        : aiInsight.urgency === 'critical'
+                        ? 'bg-rose-200 text-rose-800'
+                        : aiInsight.urgency === 'elevated'
+                        ? 'bg-amber-200 text-amber-800'
+                        : 'bg-emerald-200 text-emerald-800'
+                    }`}>
+                      {!aiInsight.hasData ? 'Nominal' : aiInsight.urgency}
+                    </span>
+                  </div>
+                  <p className="leading-relaxed font-medium">
+                    {aiInsight.insight}
+                  </p>
+                  <div className="mt-2 pt-2 border-t border-slate-200/60 text-[11px] text-slate-600">
+                    <span className="font-semibold text-slate-800">Suggested Action: </span>
+                    {aiInsight.suggestedAction}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-500">
+                Click refresh to load live AI operations insight.
+              </div>
+            )}
+
+            {/* Factual bullet insights */}
+            {operationalInsights.slice(0, 2).map((insight, idx) => (
               <div
                 key={idx}
-                className="flex items-start gap-2.5 text-xs text-slate-700 bg-emerald-50/50 border border-emerald-100/60 p-2.5 rounded-lg"
+                className="flex items-start gap-2 text-[11px] text-slate-600 bg-slate-50/70 border border-slate-100 p-2 rounded-lg"
               >
-                <svg
-                  className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-                <span className="leading-relaxed">{insight}</span>
+                <span className="text-emerald-600 font-bold mt-0.5">•</span>
+                <span className="leading-tight">{insight}</span>
               </div>
             ))}
           </div>

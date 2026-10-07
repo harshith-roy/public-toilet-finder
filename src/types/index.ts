@@ -83,3 +83,35 @@ export interface FacilityReportStats {
   unresolvedComplaints: number
 }
 
+// AI Smart Toilet Assistant Types
+export interface AIRecommendationItem {
+  toilet_id: string
+  name: string
+  reason: string
+  confidence: 'high' | 'medium'
+  distance_km?: number
+  cleanliness_status?: string
+  operational_status?: string
+  facilities?: string[]
+}
+
+export interface AIRecommendResponse {
+  answer: string
+  recommendations: AIRecommendationItem[]
+  timestamp: string
+}
+
+export interface AIAssistReportResponse {
+  suggestedCategory: ComplaintCategory
+  suggestedDescription: string
+  suggestedPriority: 'High' | 'Medium' | 'Low'
+  reasoning: string
+}
+
+export interface AIAuthorityInsightResponse {
+  insight: string
+  urgency: 'normal' | 'elevated' | 'critical'
+  suggestedAction: string
+  hasData: boolean
+}
+
